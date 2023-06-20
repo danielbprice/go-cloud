@@ -390,7 +390,22 @@ type SubscriptionOptions struct {
 // be configured in the Consumer section of the sarama.Config:
 // https://godoc.org/github.com/Shopify/sarama#Config.
 func OpenSubscription(brokers []string, config *sarama.Config, group string, topics []string, opts *SubscriptionOptions) (*pubsub.Subscription, error) {
-	ds, err := openSubscription(brokers, config, group, topics, opts)
+	consumerGroup, err := sarama.NewConsumerGroup(brokers, group, config)
+	if err != nil {
+		return nil, err
+	}
+	ds, err := openSubscription(consumerGroup, topics, opts)
+	if err != nil {
+		return nil, err
+	}
+	return pubsub.NewSubscription(ds, recvBatcherOpts, nil), nil
+}
+
+// OpenSubscriptionFromConsumerGroup creates a pubsub.Subscription from a
+// pre-existing ConsumerGroup.  This can be useful for passing a mocked
+// or traced (e.g. Datadog) ConsumerGroup.
+func OpenSubscriptionFromConsumerGroup(consumerGroup sarama.ConsumerGroup, topics []string, opts *SubscriptionOptions) (*pubsub.Subscription, error) {
+	ds, err := openSubscription(consumerGroup, topics, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -400,13 +415,9 @@ func OpenSubscription(brokers []string, config *sarama.Config, group string, top
 // openSubscription returns the driver for OpenSubscription. This function
 // exists so the test harness can get the driver interface implementation if it
 // needs to.
-func openSubscription(brokers []string, config *sarama.Config, group string, topics []string, opts *SubscriptionOptions) (driver.Subscription, error) {
+func openSubscription(consumerGroup sarama.ConsumerGroup, topics []string, opts *SubscriptionOptions) (driver.Subscription, error) {
 	if opts == nil {
 		opts = &SubscriptionOptions{}
-	}
-	consumerGroup, err := sarama.NewConsumerGroup(brokers, group, config)
-	if err != nil {
-		return nil, err
 	}
 	// Create a cancelable context for the background goroutine that
 	// consumes messages.
